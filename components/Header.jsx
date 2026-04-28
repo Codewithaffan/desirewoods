@@ -1,6 +1,7 @@
 'use client'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 
 function Instagram() {
   return (
@@ -74,10 +75,124 @@ const PRODUCT_CATEGORIES = [
   'Dining Chair','Center Table','Arm Chair',
 ]
 
+// ── Highlight matched text ────────────────────────────────────────────────────
+function Highlight({ text = '', query = '' }) {
+  if (!query.trim()) return <>{text}</>
+  const idx = text.toLowerCase().indexOf(query.toLowerCase())
+  if (idx === -1) return <>{text}</>
+  return (
+    <>
+      {text.slice(0, idx)}
+      <mark style={{ background: 'rgba(201,169,110,0.35)', color: 'inherit', padding: 0 }}>
+        {text.slice(idx, idx + query.length)}
+      </mark>
+      {text.slice(idx + query.length)}
+    </>
+  )
+}
+
 export default function Header() {
-  const [searchOpen, setSearchOpen] = useState(false)
-  const [mobileOpen, setMobileOpen] = useState(false)
+  const router = useRouter()
+
+  const [searchOpen, setSearchOpen]   = useState(false)
+  const [mobileOpen, setMobileOpen]   = useState(false)
   const [mobileProductsOpen, setMobileProductsOpen] = useState(false)
+
+  // Search state
+  const [query, setQuery]             = useState('')
+  const [allProducts, setAllProducts] = useState([])   // cached full list
+  const [fetched, setFetched]         = useState(false)
+  const [fetching, setFetching]       = useState(false)
+  const [results, setResults]         = useState([])
+  const [activeIdx, setActiveIdx]     = useState(-1)   // keyboard nav
+  const inputRef = useRef(null)
+  const dropdownRef = useRef(null)
+
+  // ── Fetch all products once when search is first opened ──────────────────
+  const loadAllProducts = async () => {
+    if (fetched || fetching) return
+    setFetching(true)
+    try {
+      const res  = await fetch('/api/products')
+      const data = await res.json()
+      setAllProducts(Array.isArray(data) ? data : [])
+      setFetched(true)
+    } catch {
+      // silently fail — results will be empty
+    } finally {
+      setFetching(false)
+    }
+  }
+
+  const openSearch = () => {
+    setSearchOpen(true)
+    loadAllProducts()
+    setTimeout(() => inputRef.current?.focus(), 50)
+  }
+
+  const closeSearch = () => {
+    setSearchOpen(false)
+    setQuery('')
+    setResults([])
+    setActiveIdx(-1)
+  }
+
+  // ── Filter as user types ─────────────────────────────────────────────────
+  useEffect(() => {
+    const q = query.trim().toLowerCase()
+    if (!q) { setResults([]); setActiveIdx(-1); return }
+    const filtered = allProducts
+      .filter(p =>
+        p.title?.toLowerCase().includes(q) ||
+        p.description?.toLowerCase().includes(q) ||
+        p.category?.toLowerCase().includes(q)
+      )
+      .slice(0, 7)
+    setResults(filtered)
+    setActiveIdx(-1)
+  }, [query, allProducts])
+
+  // ── Keyboard navigation ──────────────────────────────────────────────────
+  const handleKeyDown = (e) => {
+    if (!results.length) return
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      setActiveIdx(i => Math.min(i + 1, results.length - 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      setActiveIdx(i => Math.max(i - 1, 0))
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const target = activeIdx >= 0 ? results[activeIdx] : results[0]
+      if (target) goToProduct(target)
+    } else if (e.key === 'Escape') {
+      closeSearch()
+    }
+  }
+
+  const goToProduct = (product) => {
+    router.push(`/products/${product.category}/${product._id}`)
+    closeSearch()
+  }
+
+  // ── Close dropdown on outside click ──────────────────────────────────────
+  useEffect(() => {
+    if (!searchOpen) return
+    const handler = (e) => {
+      if (
+        dropdownRef.current && !dropdownRef.current.contains(e.target) &&
+        inputRef.current && !inputRef.current.contains(e.target)
+      ) {
+        setResults([])
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [searchOpen])
+
+  // pretty category label
+  const catLabel = (slug = '') =>
+    slug.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')
 
   return (
     <>
@@ -88,37 +203,32 @@ export default function Header() {
             margin-left: -12px !important;
           }
         }
+        .search-result-item:hover,
+        .search-result-item.active {
+          background: rgba(201,169,110,0.15) !important;
+        }
       `}</style>
+
       <header className="absolute top-0 left-0 right-0 z-50 w-full" style={{ backgroundColor: 'transparent', fontFamily: 'var(--font-jost)' }}>
         <div className="flex items-center justify-between h-[70px] px-6 lg:px-10">
-          
+
           {/* Logo */}
           <Link href="/" className="flex-shrink-0 z-10" style={{ marginLeft: '-32px' }}>
-  <img
-    src="/logo.png"
-    alt="Desire Woods"
-    className="header-logo-mobile"
-    style={{
-  height: 'clamp(100px, 10vw, 500px)',   // 🔥 realistic size (abhi tera bahut bada hai)
-  width: 'auto',
-  objectFit: 'contain',
-
-  // ❌ REMOVE this (problem yahi hai)
-  // filter: 'invert(1) brightness(1.15) sepia(0.18) saturate(1.2)',
-
-  // ✅ Better approach
-  filter: 'brightness(0) invert(1)',  // pure white conversion
-
-  transition: 'all 0.3s ease',
-}}
-    onMouseEnter={e => {
-      e.currentTarget.style.filter = 'invert(1) brightness(1.35) sepia(0.45) saturate(1.8) hue-rotate(-5deg)'
-    }}
-    onMouseLeave={e => {
-      e.currentTarget.style.filter = 'invert(1) brightness(1.15) sepia(0.18) saturate(1.2)'
-    }}
-  />
-</Link>
+            <img
+              src="/logo.png"
+              alt="Desire Woods"
+              className="header-logo-mobile"
+              style={{
+                height: 'clamp(100px, 10vw, 500px)',
+                width: 'auto',
+                objectFit: 'contain',
+                filter: 'brightness(0) invert(1)',
+                transition: 'all 0.3s ease',
+              }}
+              onMouseEnter={e => { e.currentTarget.style.filter = 'invert(1) brightness(1.35) sepia(0.45) saturate(1.8) hue-rotate(-5deg)' }}
+              onMouseLeave={e => { e.currentTarget.style.filter = 'brightness(0) invert(1)' }}
+            />
+          </Link>
 
           {/* DESKTOP NAV */}
           <nav className="hidden lg:flex items-center gap-10 absolute left-1/2 -translate-x-1/2">
@@ -134,11 +244,8 @@ export default function Header() {
                         {PRODUCT_CATEGORIES.map((item, i) => {
                           const slug = item.toLowerCase().replace(/\s/g, '-')
                           return (
-                            <Link
-                              key={i}
-                              href={`/products/${slug}`}
-                              className="text-white/80 hover:text-white text-sm transition-all duration-200 hover:translate-x-1"
-                            >
+                            <Link key={i} href={`/products/${slug}`}
+                              className="text-white/80 hover:text-white text-sm transition-all duration-200 hover:translate-x-1">
                               {item}
                             </Link>
                           )
@@ -148,7 +255,6 @@ export default function Header() {
                   </div>
                 )
               }
-
               return (
                 <Link key={link.label} href={link.href}
                   className="text-white/85 hover:text-white transition-colors duration-200 text-[11px] tracking-[2.5px]">
@@ -158,60 +264,150 @@ export default function Header() {
             })}
           </nav>
 
-          {/* Right Side - Social Icons + Search + Hamburger */}
+          {/* Right Side */}
           <div className="flex items-center gap-4 text-white z-10">
-            {/* Desktop Social Icons with brand colors */}
             <div className="hidden lg:flex items-center gap-3">
               <Link href="#" className="opacity-80 hover:opacity-100 transition-opacity"><LinkedIn /></Link>
               <Link href="#" className="opacity-80 hover:opacity-100 transition-opacity"><Instagram /></Link>
               <Link href="#" className="opacity-80 hover:opacity-100 transition-opacity"><Facebook /></Link>
               <Link href="#" className="opacity-80 hover:opacity-100 transition-opacity"><Pinterest /></Link>
             </div>
-            
-            {/* Separator line for desktop */}
             <div className="hidden lg:block w-px h-5 bg-white/30"></div>
-            
-            <button onClick={() => setSearchOpen(s => !s)}><SearchIcon /></button>
+            <button onClick={searchOpen ? closeSearch : openSearch} aria-label="Search">
+              {searchOpen ? <CloseIcon /> : <SearchIcon />}
+            </button>
             <button className="lg:hidden" onClick={() => setMobileOpen(true)}><MenuIcon /></button>
           </div>
         </div>
 
+        {/* ── Search Bar ── */}
         {searchOpen && (
-          <div className="border-t px-6 py-3 flex items-center gap-3 bg-black/60 backdrop-blur-md">
-            <SearchIcon />
-            <input autoFocus type="text" placeholder="Search..."
-              className="flex-1 bg-transparent text-white outline-none" />
-            <button onClick={() => setSearchOpen(false)}><CloseIcon /></button>
+          <div style={{ position: 'relative' }}>
+            <div className="border-t px-6 py-3 flex items-center gap-3 bg-black/70 backdrop-blur-md">
+              <SearchIcon />
+              <input
+                ref={inputRef}
+                type="text"
+                placeholder={fetching ? 'Loading products…' : 'Search products…'}
+                value={query}
+                onChange={e => setQuery(e.target.value)}
+                onKeyDown={handleKeyDown}
+                disabled={fetching}
+                className="flex-1 bg-transparent text-white outline-none placeholder-white/40"
+                style={{ fontSize: 14, letterSpacing: 0.5 }}
+              />
+              {query && (
+                <button onClick={() => { setQuery(''); setResults([]); inputRef.current?.focus() }}
+                  style={{ color: 'rgba(255,255,255,0.4)', fontSize: 12, padding: '2px 6px' }}>
+                  clear
+                </button>
+              )}
+              <button onClick={closeSearch}><CloseIcon /></button>
+            </div>
+
+            {/* ── Live Results Dropdown ── */}
+            {results.length > 0 && (
+              <div
+                ref={dropdownRef}
+                style={{
+                  position: 'absolute', top: '100%', left: 0, right: 0,
+                  background: 'rgba(10,10,10,0.96)',
+                  backdropFilter: 'blur(20px)',
+                  borderTop: '1px solid rgba(201,169,110,0.2)',
+                  borderBottom: '1px solid rgba(255,255,255,0.07)',
+                  zIndex: 200,
+                  maxHeight: 420,
+                  overflowY: 'auto',
+                }}
+              >
+                {/* Result count */}
+                <div style={{ padding: '8px 20px', fontSize: 10, color: 'rgba(255,255,255,0.3)', letterSpacing: 2, textTransform: 'uppercase', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                  {results.length} result{results.length !== 1 ? 's' : ''} for "{query}"
+                </div>
+
+                {results.map((product, i) => {
+                  const img = product.imageUrls?.[0] || product.imageUrl
+                  const isActive = i === activeIdx
+                  return (
+                    <button
+                      key={product._id}
+                      className={`search-result-item${isActive ? ' active' : ''}`}
+                      onClick={() => goToProduct(product)}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 14,
+                        width: '100%', padding: '12px 20px',
+                        background: isActive ? 'rgba(201,169,110,0.15)' : 'transparent',
+                        border: 'none', cursor: 'pointer',
+                        borderBottom: '1px solid rgba(255,255,255,0.04)',
+                        textAlign: 'left', transition: 'background 0.15s',
+                      }}
+                    >
+                      {/* Thumbnail */}
+                      <div style={{ width: 48, height: 48, borderRadius: 6, overflow: 'hidden', flexShrink: 0, background: '#1a1a1a' }}>
+                        {img && <img src={img} alt={product.title} style={{ width: '100%', height: '100%', objectFit: 'cover' }} />}
+                      </div>
+
+                      {/* Text */}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'white', marginBottom: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          <Highlight text={product.title} query={query} />
+                        </div>
+                        <div style={{ fontSize: 11, color: '#c9a96e', letterSpacing: 1, textTransform: 'uppercase' }}>
+                          {catLabel(product.category)}
+                        </div>
+                        {product.description && (
+                          <div style={{ fontSize: 11, color: 'rgba(255,255,255,0.35)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            <Highlight text={product.description} query={query} />
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Arrow */}
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                        <path d="M5 12h14M12 5l7 7-7 7"/>
+                      </svg>
+                    </button>
+                  )
+                })}
+
+                {/* Keyboard hint */}
+                <div style={{ padding: '8px 20px', fontSize: 10, color: 'rgba(255,255,255,0.2)', letterSpacing: 1, display: 'flex', gap: 16 }}>
+                  <span>↑↓ navigate</span>
+                  <span>↵ open</span>
+                  <span>Esc close</span>
+                </div>
+              </div>
+            )}
+
+            {/* No results state */}
+            {query.trim().length >= 2 && results.length === 0 && !fetching && (
+              <div style={{
+                position: 'absolute', top: '100%', left: 0, right: 0,
+                background: 'rgba(10,10,10,0.96)', backdropFilter: 'blur(20px)',
+                borderTop: '1px solid rgba(201,169,110,0.2)',
+                padding: '24px 20px', textAlign: 'center', zIndex: 200,
+              }}>
+                <p style={{ fontSize: 13, color: 'rgba(255,255,255,0.4)', marginBottom: 4 }}>No products found for "{query}"</p>
+                <p style={{ fontSize: 11, color: 'rgba(255,255,255,0.2)', letterSpacing: 1 }}>Try a different keyword</p>
+              </div>
+            )}
           </div>
         )}
 
         {/* MOBILE MENU OVERLAY */}
         {mobileOpen && (
           <div className="fixed inset-0 z-50 lg:hidden">
-            {/* Backdrop */}
-            <div 
-              className="absolute inset-0 bg-black/70 backdrop-blur-md"
-              onClick={() => setMobileOpen(false)}
-            />
-            
-            {/* Menu Panel */}
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-md" onClick={() => setMobileOpen(false)} />
             <div className="absolute right-0 top-0 bottom-0 w-[300px] bg-black/90 backdrop-blur-xl border-l border-white/20 flex flex-col">
-              
-              {/* Header with Close Button */}
               <div className="p-6 pb-4">
                 <div className="flex justify-end">
-                  <button onClick={() => setMobileOpen(false)} className="text-white">
-                    <CloseIcon />
-                  </button>
+                  <button onClick={() => setMobileOpen(false)} className="text-white"><CloseIcon /></button>
                 </div>
               </div>
-
-              {/* Scrollable Content Area */}
               <div className="flex-1 overflow-y-auto px-6">
                 <nav className="flex flex-col gap-4 pb-6">
-                  {/* Products Accordion */}
                   <div className="border-b border-white/20 pb-3">
-                    <button 
+                    <button
                       onClick={() => setMobileProductsOpen(!mobileProductsOpen)}
                       className="flex items-center justify-between w-full text-white/85 hover:text-white text-base tracking-[2.5px] py-2"
                     >
@@ -220,51 +416,23 @@ export default function Header() {
                         <ChevronDown />
                       </span>
                     </button>
-                    
-                    {/* Mobile Products Dropdown */}
                     <div className={`mt-4 space-y-3 ${mobileProductsOpen ? 'block' : 'hidden'}`}>
                       {PRODUCT_CATEGORIES.map((item, i) => {
                         const slug = item.toLowerCase().replace(/\s/g, '-')
                         return (
-                          <Link
-                            key={i}
-                            href={`/products/${slug}`}
-                            onClick={() => setMobileOpen(false)}
-                            className="block text-white/70 hover:text-white text-sm py-2 transition-all duration-200 hover:translate-x-2"
-                          >
+                          <Link key={i} href={`/products/${slug}`} onClick={() => setMobileOpen(false)}
+                            className="block text-white/70 hover:text-white text-sm py-2 transition-all duration-200 hover:translate-x-2">
                             {item}
                           </Link>
                         )
                       })}
                     </div>
                   </div>
-
-                  {/* Other Nav Links */}
-                  <Link 
-                    href="/projects" 
-                    onClick={() => setMobileOpen(false)}
-                    className="text-white/85 hover:text-white text-base tracking-[2.5px] py-3 border-b border-white/20"
-                  >
-                    PROJECTS
-                  </Link>
-                  <Link 
-                    href="/about" 
-                    onClick={() => setMobileOpen(false)}
-                    className="text-white/85 hover:text-white text-base tracking-[2.5px] py-3 border-b border-white/20"
-                  >
-                    ABOUT US
-                  </Link>
-                  <Link 
-                    href="/contact" 
-                    onClick={() => setMobileOpen(false)}
-                    className="text-white/85 hover:text-white text-base tracking-[2.5px] py-3 border-b border-white/20"
-                  >
-                    CONTACT US
-                  </Link>
+                  <Link href="/projects" onClick={() => setMobileOpen(false)} className="text-white/85 hover:text-white text-base tracking-[2.5px] py-3 border-b border-white/20">PROJECTS</Link>
+                  <Link href="/about" onClick={() => setMobileOpen(false)} className="text-white/85 hover:text-white text-base tracking-[2.5px] py-3 border-b border-white/20">ABOUT US</Link>
+                  <Link href="/contact" onClick={() => setMobileOpen(false)} className="text-white/85 hover:text-white text-base tracking-[2.5px] py-3 border-b border-white/20">CONTACT US</Link>
                 </nav>
               </div>
-
-              {/* Social Links with brand colors - Always at bottom */}
               <div className="p-6 pt-4 border-t border-white/10">
                 <div className="flex gap-5">
                   <Link href="#" className="opacity-80 hover:opacity-100 transition-opacity"><LinkedIn /></Link>

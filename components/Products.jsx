@@ -10,7 +10,7 @@ const products = [
   { id:3, slug:"product3", name:"Product Three", img:"/product3.jpg", hover:"/product3.1.jpg"},
   { id:4, slug:"product4", name:"Product Four", img:"/product4.jpg", hover:"/product4.1.jpg"},
   { id:5, slug:"product5", name:"Product Five", img:"/product5.jpg", hover:"/product5.1.jpg"},
-  { id:6, slug:"product6", name:"Product Six", img:"/product6.png", hover:"/product6.1.png"},
+  { id:6, slug:"product6", name:"Product Six", img:"/product1.jpg", hover:"/product1.1.jpg"},
 ]
 
 function ProductCard({ product }) {

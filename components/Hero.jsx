@@ -3,8 +3,8 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 
 const SLIDES = [
   { id: 1, src: '/hero1.png', alt: 'Desire Woods Collection 1' },
-  { id: 2, src: '/hero2.jpg', alt: 'Desire Woods Collection 2' },
-  { id: 3, src: '/hero3.jpg', alt: 'Desire Woods Collection 3' },
+  { id: 2, src: '/hero2.png', alt: 'Desire Woods Collection 2' },
+  { id: 3, src: '/hero3.png', alt: 'Desire Woods Collection 3' },
   { id: 4, src: '/hero4.png', alt: 'Desire Woods Collection 4' },
 ]
 
